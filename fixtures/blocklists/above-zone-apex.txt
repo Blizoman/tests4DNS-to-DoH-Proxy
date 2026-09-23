@@ -1,0 +1,2 @@
+# an entry above the home.lan zone's apex
+lan

@@ -1,0 +1,9 @@
+127.0.0.1 localhost
+::1 localhost ip6-localhost ip6-loopback
+0.0.0.0 doubleclick.example
+0.0.0.0 ads1.example.org ads2.example.org # two names, one line
+fe80::1%eth0 somejunk-should-be-skipped-because-of-colon
+broadcasthost
+# comment-only line
+
+192.168.1.1

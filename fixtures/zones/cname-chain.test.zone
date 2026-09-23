@@ -1,0 +1,11 @@
+$ORIGIN cname-chain.test.
+$TTL 60
+@       IN SOA  ns1 admin 1 7200 3600 1209600 3600
+@       IN NS   ns1
+ns1     IN A    192.0.2.1
+a       IN CNAME b
+b       IN CNAME c
+c       IN A    192.0.2.42
+loop1   IN CNAME loop2
+loop2   IN CNAME loop1
+outside IN CNAME somewhere.example.outside.

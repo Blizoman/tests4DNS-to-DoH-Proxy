@@ -1,0 +1,7 @@
+$ORIGIN ttlmismatch.test.
+$TTL 300
+@   IN SOA      ns1 admin 1 7200 3600 1209600 3600
+@   IN NS       ns1
+ns1 IN A        192.0.2.68
+dup 100 IN A    192.0.2.69
+dup 200 IN A    192.0.2.70

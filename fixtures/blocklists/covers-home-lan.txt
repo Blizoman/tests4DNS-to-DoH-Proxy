@@ -1,0 +1,2 @@
+# covers the whole home.lan zone: names in a loaded zone must win anyway
+home.lan

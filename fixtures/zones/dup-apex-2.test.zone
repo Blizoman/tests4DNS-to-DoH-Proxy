@@ -1,0 +1,6 @@
+$ORIGIN dup.test.
+$TTL 300
+@   IN SOA  ns1 admin 2 7200 3600 1209600 3600
+@   IN NS   ns1
+ns1 IN A    192.0.2.50
+two IN A    192.0.2.51

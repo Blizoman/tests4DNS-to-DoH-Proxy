@@ -1,0 +1,2 @@
+# a token that is not a valid domain name (contains an invalid character)
+ads*example.com
