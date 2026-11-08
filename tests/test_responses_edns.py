@@ -67,14 +67,28 @@ def test_blocked_answer_with_opt_gets_opt_echoed(edns_proxy):
 
 
 def test_invalid_answer_with_opt_gets_opt_echoed(edns_proxy):
-    q = dnswire.header(id_=0x3001, opcode=1, qdcount=1, arcount=1)
-    q += dnswire.question(dnswire.encode_name("x.test."))
+    # QCLASS != IN is rejected in step 7, after the OPT was accepted in step 6,
+    # so the NOTIMP response MUST carry the proxy's own OPT.
+    q = dnswire.header(id_=0x3001, qdcount=1, arcount=1)
+    q += dnswire.question(dnswire.encode_name("x.test."), qclass=3)  # CH
     q += dnswire.opt_record(payload_size=1500)
     wire = _raw(edns_proxy, q)
     r = dns.message.from_wire(wire, raise_on_truncation=False)
     assert r.rcode() == dns.rcode.NOTIMP
     assert r.edns == 0
     assert r.payload >= 1232
+
+
+def test_bad_opcode_with_opt_gets_no_opt(edns_proxy):
+    # OPCODE != QUERY is rejected in step 3. Spec: "Responses to messages
+    # rejected in steps 1-6 carry no OPT", even if the query had one.
+    q = dnswire.header(id_=0x3003, opcode=1, qdcount=1, arcount=1)
+    q += dnswire.question(dnswire.encode_name("x.test."))
+    q += dnswire.opt_record(payload_size=1500)
+    wire = _raw(edns_proxy, q)
+    r = dns.message.from_wire(wire, raise_on_truncation=False)
+    assert r.rcode() == dns.rcode.NOTIMP
+    assert r.edns == -1
 
 
 def test_rejected_in_early_steps_never_carries_opt(edns_proxy):
@@ -117,7 +131,7 @@ def test_oversized_zone_answer_not_truncated_under_default_edns_payload(edns_pro
     wire = _raw(edns_proxy, q.to_wire())
     r = dns.message.from_wire(wire, raise_on_truncation=False)
     assert not (r.flags & dns.flags.TC)
-    assert len(r.answer) == 40
+    assert sum(len(rrset) for rrset in r.answer) == 40  # dnspython groups the A records into one RRset
 
 
 def test_small_answer_not_truncated_without_opt(edns_proxy):
@@ -169,4 +183,4 @@ def test_tcp_response_never_truncated(edns_proxy):
         sock.close()
     r = dns.message.from_wire(wire, raise_on_truncation=False)
     assert not (r.flags & dns.flags.TC)
-    assert len(r.answer) == 40
+    assert sum(len(rrset) for rrset in r.answer) == 40  # dnspython groups the A records into one RRset

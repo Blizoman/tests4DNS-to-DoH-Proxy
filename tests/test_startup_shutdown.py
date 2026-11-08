@@ -14,13 +14,16 @@ EX_CONFIG = 78
 
 
 def test_listening_lines_dual_stack_default(start_proxy, free_port):
-    # No -a: proxy MUST serve IPv4 and IPv6 on both UDP and TCP -> 4 lines
-    # (2 sockets * {udp,tcp}, or one dual-stack socket per transport -> also 4
-    # lines total: 2 per address family reported separately, or 2 total if a
-    # single dual-stack socket serves both v4 and v6 per transport). The spec's
-    # own example shows 4 lines for the no -a case, so we require exactly that.
+    # No -a: proxy MUST serve IPv4 and IPv6 on both UDP and TCP, "one
+    # dual-stack socket per transport or two sockets". Spec: "one dual-stack
+    # socket per transport prints two lines in total", so both 4 lines (two
+    # sockets per family) and 2 lines (two dual-stack [::] sockets) are valid.
     h, lines = start_proxy(["-u", "https://example.test/dns-query", "-p", str(free_port)], wait_for=4, timeout=5)
-    assert len(lines) == 4, f"expected 4 'listening on' lines, got: {lines!r} (stderr extra: {h.stderr_extra})"
+    assert len(lines) in (2, 4), f"expected 2 or 4 'listening on' lines, got: {lines!r} (stderr extra: {h.stderr_extra})"
+    if len(lines) == 2:
+        assert all(line.startswith("listening on [::]:") for line in lines), (
+            f"2 lines are only enough for dual-stack [::] sockets, got: {lines!r}"
+        )
 
 
 @pytest.mark.parametrize("addr,family", [("127.0.0.1", socket.AF_INET), ("::1", socket.AF_INET6)])
