@@ -127,11 +127,33 @@ def test_oversized_zone_answer_truncated_at_bufsize_512_with_opt(edns_proxy):
 
 
 def test_oversized_zone_answer_not_truncated_under_default_edns_payload(edns_proxy):
+    # The 40-record answer is ~690 B with name compression but ~1450 B
+    # without. The spec does not require compression (RFC 1035 4.1.4: "free
+    # to avoid using pointers"), so whether it fits into 1232 B depends on the
+    # implementation. Measure the proxy's real response size over TCP (never
+    # truncated) and expect the UDP response to follow the limit accordingly.
     q = make_query("big.big-answer.test.", "A", use_edns=True, payload=1232)
+    _h, host, port = edns_proxy
+    sock = netio.tcp_connect(host, port, timeout=5.0)
+    try:
+        netio.send_tcp_message(sock, q.to_wire())
+        full_size = len(netio.recv_tcp_message(sock))
+    finally:
+        sock.close()
+
     wire = _raw(edns_proxy, q.to_wire())
     r = dns.message.from_wire(wire, raise_on_truncation=False)
-    assert not (r.flags & dns.flags.TC)
-    assert sum(len(rrset) for rrset in r.answer) == 40  # dnspython groups the A records into one RRset
+    assert r.edns == 0
+    if full_size <= 1232:
+        assert not (r.flags & dns.flags.TC), f"a {full_size} B response fits the 1232 B limit and MUST NOT be truncated"
+        assert len(wire) == full_size
+        assert sum(len(rrset) for rrset in r.answer) == 40  # dnspython groups the A records into one RRset
+    else:
+        # Uncompressed: over the limit, so it MUST be replaced by header + TC + question + OPT.
+        assert r.flags & dns.flags.TC, f"a {full_size} B response exceeds the 1232 B limit and MUST be truncated"
+        assert len(r.answer) == 0
+        assert len(r.authority) == 0
+        assert len(r.question) == 1
 
 
 def test_small_answer_not_truncated_without_opt(edns_proxy):
