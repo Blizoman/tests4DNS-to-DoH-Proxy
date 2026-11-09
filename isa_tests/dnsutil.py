@@ -17,7 +17,7 @@ def make_query(qname: str, qtype="A", *, id=0x1234, rd=True, use_edns=True, payl
         qname,
         qtype,
         rdclass="IN",
-        use_edns=0 if use_edns else None,
+        use_edns=0 if use_edns else False,  # None + payload would still enable EDNS
         payload=payload,
         want_dnssec=False,
     )

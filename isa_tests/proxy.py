@@ -26,6 +26,10 @@ class ProxyHandle:
         )
         self.stdout_q: queue.Queue[str] = queue.Queue()
         self.stderr_q: queue.Queue[str] = queue.Queue()
+        self.stderr_extra: list[str] = []
+        # Non-'listening on' lines wait_listening() consumed but nobody has
+        # drained yet; drain_stderr() returns them first.
+        self._stderr_pending: list[str] = []
         self._threads = [
             threading.Thread(target=self._pump, args=(self.proc.stdout, self.stdout_q), daemon=True),
             threading.Thread(target=self._pump, args=(self.proc.stderr, self.stderr_q), daemon=True),
@@ -49,7 +53,8 @@ class ProxyHandle:
     def wait_listening(self, expected: int = 4, timeout: float = 5.0) -> list[str]:
         """Collects 'listening on ...' lines from stderr until `expected` have
         arrived or `timeout` elapses. Non-matching stderr lines are kept in
-        stderr_extra for inspection (e.g. skip-record warnings)."""
+        stderr_extra for inspection (e.g. skip-record warnings); they are
+        also still returned by the next drain_stderr() call."""
         deadline = time.monotonic() + timeout
         lines = []
         self.stderr_extra = []
@@ -63,10 +68,11 @@ class ProxyHandle:
                 lines.append(line)
             else:
                 self.stderr_extra.append(line)
+                self._stderr_pending.append(line)
         return lines
 
     def drain_stderr(self, timeout: float = 0.3) -> list[str]:
-        lines = []
+        lines, self._stderr_pending = self._stderr_pending, []
         deadline = time.monotonic() + timeout
         while True:
             remaining = deadline - time.monotonic()
@@ -88,6 +94,16 @@ class ProxyHandle:
             except queue.Empty:
                 break
         return lines
+
+    def drain_stdout(self) -> list[str]:
+        """Discards (and returns) every stdout line already received, e.g.
+        log lines left behind by earlier tests sharing a module-scoped proxy."""
+        lines = []
+        while True:
+            try:
+                lines.append(self.stdout_q.get_nowait())
+            except queue.Empty:
+                return lines
 
     def expect_no_log_line(self, timeout: float = 0.5) -> bool:
         try:

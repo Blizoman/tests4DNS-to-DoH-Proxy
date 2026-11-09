@@ -67,14 +67,28 @@ def test_blocked_answer_with_opt_gets_opt_echoed(edns_proxy):
 
 
 def test_invalid_answer_with_opt_gets_opt_echoed(edns_proxy):
-    q = dnswire.header(id_=0x3001, opcode=1, qdcount=1, arcount=1)
-    q += dnswire.question(dnswire.encode_name("x.test."))
+    # QCLASS != IN is rejected in step 7, after the OPT was accepted in step 6,
+    # so the NOTIMP response MUST carry the proxy's own OPT.
+    q = dnswire.header(id_=0x3001, qdcount=1, arcount=1)
+    q += dnswire.question(dnswire.encode_name("x.test."), qclass=3)  # CH
     q += dnswire.opt_record(payload_size=1500)
     wire = _raw(edns_proxy, q)
     r = dns.message.from_wire(wire, raise_on_truncation=False)
     assert r.rcode() == dns.rcode.NOTIMP
     assert r.edns == 0
     assert r.payload >= 1232
+
+
+def test_bad_opcode_with_opt_gets_no_opt(edns_proxy):
+    # OPCODE != QUERY is rejected in step 3. Spec: "Responses to messages
+    # rejected in steps 1-6 carry no OPT", even if the query had one.
+    q = dnswire.header(id_=0x3003, opcode=1, qdcount=1, arcount=1)
+    q += dnswire.question(dnswire.encode_name("x.test."))
+    q += dnswire.opt_record(payload_size=1500)
+    wire = _raw(edns_proxy, q)
+    r = dns.message.from_wire(wire, raise_on_truncation=False)
+    assert r.rcode() == dns.rcode.NOTIMP
+    assert r.edns == -1
 
 
 def test_rejected_in_early_steps_never_carries_opt(edns_proxy):
@@ -113,11 +127,33 @@ def test_oversized_zone_answer_truncated_at_bufsize_512_with_opt(edns_proxy):
 
 
 def test_oversized_zone_answer_not_truncated_under_default_edns_payload(edns_proxy):
+    # The 40-record answer is ~690 B with name compression but ~1450 B
+    # without. The spec does not require compression (RFC 1035 4.1.4: "free
+    # to avoid using pointers"), so whether it fits into 1232 B depends on the
+    # implementation. Measure the proxy's real response size over TCP (never
+    # truncated) and expect the UDP response to follow the limit accordingly.
     q = make_query("big.big-answer.test.", "A", use_edns=True, payload=1232)
+    _h, host, port = edns_proxy
+    sock = netio.tcp_connect(host, port, timeout=5.0)
+    try:
+        netio.send_tcp_message(sock, q.to_wire())
+        full_size = len(netio.recv_tcp_message(sock))
+    finally:
+        sock.close()
+
     wire = _raw(edns_proxy, q.to_wire())
     r = dns.message.from_wire(wire, raise_on_truncation=False)
-    assert not (r.flags & dns.flags.TC)
-    assert len(r.answer) == 40
+    assert r.edns == 0
+    if full_size <= 1232:
+        assert not (r.flags & dns.flags.TC), f"a {full_size} B response fits the 1232 B limit and MUST NOT be truncated"
+        assert len(wire) == full_size
+        assert sum(len(rrset) for rrset in r.answer) == 40  # dnspython groups the A records into one RRset
+    else:
+        # Uncompressed: over the limit, so it MUST be replaced by header + TC + question + OPT.
+        assert r.flags & dns.flags.TC, f"a {full_size} B response exceeds the 1232 B limit and MUST be truncated"
+        assert len(r.answer) == 0
+        assert len(r.authority) == 0
+        assert len(r.question) == 1
 
 
 def test_small_answer_not_truncated_without_opt(edns_proxy):
@@ -169,4 +205,4 @@ def test_tcp_response_never_truncated(edns_proxy):
         sock.close()
     r = dns.message.from_wire(wire, raise_on_truncation=False)
     assert not (r.flags & dns.flags.TC)
-    assert len(r.answer) == 40
+    assert sum(len(rrset) for rrset in r.answer) == 40  # dnspython groups the A records into one RRset

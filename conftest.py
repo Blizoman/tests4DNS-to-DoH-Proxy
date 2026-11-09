@@ -42,17 +42,17 @@ def free_port():
     return ports.free_udp_tcp_port()
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def zones_dir():
     return ZONES_DIR
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def zone_errors_dir():
     return ZONE_ERRORS_DIR
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def blocklists_dir():
     return BLOCKLISTS_DIR
 

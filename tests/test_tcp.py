@@ -103,6 +103,8 @@ def test_idle_connection_closed_after_10s(tcp_proxy):
 
 def test_client_closing_mid_message_produces_no_log_line(tcp_proxy):
     h, host, port = tcp_proxy
+    time.sleep(0.3)
+    h.drain_stdout()  # log lines of earlier tests sharing this proxy
     sock = netio.tcp_connect(host, port, timeout=5.0)
     # Send only the two-byte length prefix (claiming a large body), then close.
     sock.sendall(struct.pack("!H", 100))
